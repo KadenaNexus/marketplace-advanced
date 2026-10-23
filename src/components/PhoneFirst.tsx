@@ -4,6 +4,8 @@ import { ExternalLink, Smartphone } from "lucide-react";
 import { AppLogo } from "@/components/AppLogo";
 import { useLang } from "@/components/NexusLanding";
 import { LINX_ANDROID, LINX_IOS, LinxPath, inWalletBrowser, linxStoreLink } from "@/components/OpenInLinx";
+import { SharedPreview } from "@/components/Share";
+import { refFromLink } from "@/lib/share";
 
 const COPY = {
   en: {
@@ -90,12 +92,15 @@ function LinxOnlyScreen({ computer, onContinue }: { computer: boolean; onContinu
   const [lang] = useLang();
   const t = COPY[lang];
   const stepNo = "flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground";
+  // a share link someone tapped (/s/… redirects to ?offer=…): show what it is and how to open it in Linx
+  const [shared] = useState(() => { try { return refFromLink(new URLSearchParams(window.location.search).get("offer") ?? ""); } catch { return null; } });
   return (
     <div className="min-h-screen bg-background" dir={lang === "ar" ? "rtl" : "ltr"} lang={lang}>
       <header className="border-b border-border bg-card/50" dir="ltr">
         <div className="container mx-auto px-4 py-4"><AppLogo /></div>
       </header>
       <main className="container mx-auto max-w-3xl space-y-8 px-4 py-10">
+        {shared && <SharedPreview refId={shared} />}
         <div className="space-y-3">
           <h1 className="font-display text-3xl font-bold leading-tight md:text-4xl">{t.title}</h1>
           <p className="text-lg text-muted-foreground">{t.lead}</p>

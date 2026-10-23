@@ -72,11 +72,25 @@ export function parseEscrowCall(cmd, contract = [cfg().contract, cfg().contractV
   const code = c?.payload?.exec?.code;
   if (typeof code !== "string" || code.length > 4000) return null;
   const modules = (Array.isArray(contract) ? contract : [contract]).map(escapeRe).join("|");
-  const m = code.match(new RegExp(`\\(\\s*(${modules})\\.([a-z-]+)\\s+"([^"]{1,255})"`));
+  let m = code.match(new RegExp(`\\(\\s*(${modules})\\.([a-z-]+)\\s+"([^"]{1,255})"`));
+  if (!m) {
+    // a free transaction (gas station, contract revision 3): the id comes from the data, "(… (read-msg \"trade\") …)"
+    const r = code.match(new RegExp(`^\\(\\s*(${modules})\\.([a-z-]+)\\s+\\(read-msg\\s+"trade"\\)`));
+    const id = c?.payload?.exec?.data?.trade;
+    if (r && typeof id === "string" && id.length >= 1 && id.length <= 255 && !id.includes('"')) m = [r[0], r[1], r[2], id];
+  }
   if (!m || !ACTIONS[m[2]]) return null;
   const isV11 = m[1] === cfg().contractV11;
   if (!(chain === "1" || (isV11 && v11Chains.includes(chain)))) return null;
-  const sender = typeof c.meta?.sender === "string" && /^k:[0-9a-f]{64}$/i.test(c.meta.sender) ? c.meta.sender : "";
+  // the wallet that acted: the sender, or for a free transaction (paid by the station) the account it authorized
+  const isK = (a) => typeof a === "string" && /^k:[0-9a-f]{64}$/i.test(a);
+  let sender = isK(c.meta?.sender) ? c.meta.sender : "";
+  if (!sender) {
+    for (const sg of Array.isArray(c.signers) ? c.signers : []) {
+      const auth = (Array.isArray(sg?.clist) ? sg.clist : []).find((x) => /\.ACCOUNT_AUTH$/.test(String(x?.name)));
+      if (auth && isK(auth.args?.[0]) && auth.args[0].slice(2).toLowerCase() === String(sg.pubKey || "").toLowerCase()) { sender = auth.args[0]; break; }
+    }
+  }
   return { fn: m[2], offerId: toRef(chain, m[3]), sender, chain };
 }
 

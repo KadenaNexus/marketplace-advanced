@@ -24,6 +24,8 @@ import { fetchChain, readTradeWithPool } from "./chain.js";
 import { createChainCache } from "./trust.js";
 import { registerProofRoutes } from "./proofs.js";
 import { createDisputeAuthz } from "./authz.js";
+import { authHeadersToQuery } from "./authHeaders.js";
+import { registerShareRoutes } from "./share.js";
 import { ownedFilename, mayUseAvatar, shouldDeleteOld, AVATAR_URL_PREFIX } from "./avatars.js";
 import { initSessionSecret, isSessionToken, issueSessionToken, verifySessionToken } from "./session.js";
 import express from "express";
@@ -265,6 +267,8 @@ app.use((req, res, next) => {
   if (ct.toLowerCase().includes("multipart/form-data")) return next();
   express.json({ limit: "256kb" })(req, res, next);
 });
+// Signed proofs and session tokens come in headers (X-Nexus-*), not the address: see server/authHeaders.js
+app.use(authHeadersToQuery);
 
 // Rate limiting: 50 req/s per visitor on /api/* (50+ → 429). Keyed on the visitor's address behind Nginx
 // (server/clientIp.js), not on req.ip, which is always 127.0.0.1 there.
@@ -343,6 +347,7 @@ registerOfferModerationRoutes(app, { getPool: () => pool, requireAuth: (...a) =>
 registerPayoutRoutes(app, { getPool: () => pool, requireAuth: (...a) => requireAuth(...a), sendAuthError: (...a) => sendAuthError(...a) });
 // escrow v11 pools: the market list and the per-pool payment details (server/pools.js)
 registerPoolRoutes(app, { getPool: () => pool, requireAuth: (...a) => requireAuth(...a), sendAuthError: (...a) => sendAuthError(...a), chain: chainCache });
+registerShareRoutes(app, { getPool: () => pool });
 // auto-release of USDT/USDC trades by the platform's release agent (off unless AUTO_RELEASE_SECRET is set)
 const autoRelease = createAutoRelease({ getPool: () => pool, chain: chainCache, onChange: (offerId, status) => { io.emit("trade-changed", { offerId }); if (status === "released") notifyTradeChangeSoon(); } });
 registerAutoReleaseRoutes(app, { getPool: () => pool, requireAuth: (...a) => requireAuth(...a), sendAuthError: (...a) => sendAuthError(...a), auto: autoRelease });

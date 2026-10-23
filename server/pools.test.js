@@ -21,6 +21,7 @@ let server, base;
 
 const clean = async () => {
   await pool.query("DELETE FROM pool_details WHERE pool_id LIKE 'pooltest-%' OR pool_id LIKE '2:pooltest-%'");
+  await pool.query("DELETE FROM trade_txs WHERE offer_id LIKE 'pooltest-%' OR offer_id LIKE '2:pooltest-%'");
   await pool.query("DELETE FROM hidden_offers WHERE offer_id LIKE 'pooltest-%' OR offer_id LIKE '2:pooltest-%'");
   await pool.query("DELETE FROM trade_payouts WHERE offer_id LIKE 'pooltest-%' OR offer_id LIKE '2:pooltest-%'");
 };
@@ -173,4 +174,28 @@ test("chain 2: the same pool id is another pool, with its own creator, details a
   assert.equal((await getJson(`/api/pools/${encodeURIComponent(ref)}/payout?${q(ARB)}`)).status, 403, "chain 1's arbiter is not chain 2's");
   assert.equal((await getJson(`/api/pools/${encodeURIComponent("2:" + "x".repeat(129))}/details`)).status, 400, "the on-chain id is limited to 128 characters");
   assert.equal((await getJson(`/api/pools/${encodeURIComponent("2:" + "x".repeat(128))}/details`)).status, 200);
+});
+
+test("GET /api/pools/of/:wallet: the creator's pools, closed ones too (from their details, a recorded create, or a trade), newest first", async () => {
+  chainPools.clear(); chainTrades.clear();
+  // on the chain: one open pool in the cached list, one closed pool with a trade, two closed pools known only by id
+  chainPools.set("pooltest-open", P({ poolId: "pooltest-open", createdAt: "2026-10-20T10:00:00.000Z" }));
+  chainPools.set("pooltest-closed-traded", P({ poolId: "pooltest-closed-traded", state: "CLOSED", createdAt: "2026-10-18T10:00:00.000Z" }));
+  chainTrades.set("pooltest-t9", T({ tradeId: "pooltest-t9", poolId: "pooltest-closed-traded", state: "COMPLETED" }));
+  const fromDetails = P({ poolId: "pooltest-closed-details", state: "CLOSED", createdAt: "2026-10-19T10:00:00.000Z" });
+  const fromTx = P({ poolId: "2:pooltest-closed-tx", chain: "2", state: "CLOSED", createdAt: "2026-10-21T10:00:00.000Z" });
+  const someoneElses = P({ poolId: "pooltest-other", creator: OTHER, state: "CLOSED" });
+  await pool.query("INSERT INTO pool_details (pool_id, creator, networks, payout, notes) VALUES ('pooltest-closed-details', $1, '[\"USDT:TRC20\"]', '{}', 'old')", [SELLER]);
+  await pool.query("INSERT INTO trade_txs (request_key, offer_id, fn, sender, status) VALUES ('pooltest-rk1', '2:pooltest-closed-tx', 'create-offer', $1, 'confirmed'), ('pooltest-rk2', 'pooltest-other', 'create-offer', $1, 'confirmed'), ('pooltest-rk3', 'pooltest-pending', 'create-offer', $1, 'pending')", [SELLER]);
+  // the cached list holds open pools and pools with trades; the others are read one by one
+  chainPools.set("pooltest-closed-details", fromDetails); chainPools.set("2:pooltest-closed-tx", fromTx); chainPools.set("pooltest-other", someoneElses);
+  const r = await getJson(`/api/pools/of/${SELLER}`);
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.map((p) => [p.poolId, p.state]),
+    [["2:pooltest-closed-tx", "CLOSED"], ["pooltest-open", "OPEN"], ["pooltest-closed-details", "CLOSED"], ["pooltest-closed-traded", "CLOSED"]],
+    "newest first; another wallet's pool and an unconfirmed create are left out");
+  assert.deepEqual(r.body.find((p) => p.poolId === "pooltest-closed-details").networks, ["USDT:TRC20"]);
+  assert.ok(r.body.every((p) => !("payout" in p)), "no addresses");
+  assert.equal((await getJson("/api/pools/of/not-a-wallet")).status, 400);
+  assert.deepEqual((await getJson(`/api/pools/of/${BUYER}`)).body, []);
 });

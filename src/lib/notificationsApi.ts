@@ -1,3 +1,4 @@
+import { authHeaders } from "./authHeaders";
 // Trade notifications feed and Web Push (server/notifications.js). Same-origin /api like the other APIs.
 // A wallet's feed and a device tied to a wallet need that wallet's proof (server/session.js), like every other
 // authenticated read: wallet, publicKey and signedCmd (a session token or a fresh signature).
@@ -31,8 +32,7 @@ async function json<T>(path: string, init?: RequestInit): Promise<T> {
 
 /** The feed for a signed-in wallet, or (null) the new-offer items only. */
 export const fetchFeed = (who?: Who | null) => {
-  const q = who ? `?${new URLSearchParams({ wallet: who.account, publicKey: who.publicKey, signedCmd: proofText(who.signedCmd) })}` : "";
-  return json<{ enabled: boolean; items: FeedItem[] }>(`/api/notifications${q}`);
+  return json<{ enabled: boolean; items: FeedItem[] }>("/api/notifications", who ? { headers: authHeaders(who.account, who.publicKey, proofText(who.signedCmd)) } : undefined);
 };
 export const getPushKey = () => json<{ enabled: boolean; publicKey?: string }>("/api/push/key");
 /** Tie this device to a wallet (with its proof), or (null) to the new-offer notifications only. */

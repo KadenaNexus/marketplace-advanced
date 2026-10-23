@@ -1,3 +1,4 @@
+import { authHeaders } from "./authHeaders";
 /** Where the KDA holder (seller) is paid: one line per payment method. See server/payout.js. */
 
 /** One way to pay the seller. For USDT/USDC, `value` is the wallet address and `network` the chain it is on. */
@@ -16,8 +17,7 @@ type Auth = { wallet: string; publicKey: string; signedCmd: unknown };
 const proof = (s: unknown) => (typeof s === "string" ? s : JSON.stringify(s));
 
 export async function getPayout(offerId: string, a: Auth): Promise<Payout | null> {
-  const q = new URLSearchParams({ wallet: a.wallet, publicKey: a.publicKey, signedCmd: proof(a.signedCmd) });
-  const r = await fetch(`/api/offers/${encodeURIComponent(offerId)}/payout?${q}`);
+  const r = await fetch(`/api/offers/${encodeURIComponent(offerId)}/payout`, { headers: authHeaders(a.wallet, a.publicKey, a.signedCmd) });
   if (r.status === 403 || r.status === 404) return null;
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Could not load the payment details");
   return r.json();

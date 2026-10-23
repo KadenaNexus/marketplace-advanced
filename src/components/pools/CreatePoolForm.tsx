@@ -28,6 +28,7 @@ import { useMyCompletedTrades, useTermsGate } from "../Trust";
 import { NEW_TRADER_MAX_KDA, NEW_TRADER_TRADES, isNewTrader, newTraderProblem } from "@/lib/trust";
 import { AlertTriangle, Gift, Loader2, Lock, Plus, Radar, ShoppingCart, Store, Zap } from "lucide-react";
 import { toast } from "sonner";
+import { openShare, poolShareItem } from "../Share";
 
 interface CreatePoolFormProps {
   onSuccess?: (poolId: string, requestKey: string) => void;
@@ -201,7 +202,11 @@ export function CreatePoolForm({ onSuccess, role = "seller", compact = false }: 
         }
       }
       txFinished();
-      toast.success(free ? "Giveaway posted" : "Pool posted", { description: `Request key: ${requestKey.slice(0, 16)}…` });
+      const shareItem = poolShareItem({ poolId, side, available: totalN, min: minN, max: maxN, price: free ? 0 : priceN, currency: free ? "FREE" : currency, token: instant ? token?.module ?? "" : "", state: "OPEN" });
+      toast.success(free ? "Giveaway posted" : "Pool posted", {
+        description: "Share it so people can find it.", duration: 12000,
+        action: { label: "Share", onClick: () => openShare(shareItem) },
+      });
       refresh();
       onSuccess?.(poolId, requestKey);
       setTotal(""); setMin(""); setMax(""); setMinTouched(false); setMaxTouched(false); setPrice(""); setAddresses({}); setNotes(""); setGiveaway(false);

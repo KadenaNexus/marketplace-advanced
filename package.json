@@ -25,7 +25,8 @@
     "test:chain": "node --test server/chain.test.js",
     "test:pools": "node --test server/pools.test.js",
     "test:auto-release": "node --test server/autoRelease.test.js",
-    "test:authz": "node --test server/authz.test.js"
+    "test:authz": "node --test server/authz.test.js",
+    "test:share": "node --test server/share.test.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

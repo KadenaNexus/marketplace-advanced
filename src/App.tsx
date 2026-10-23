@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from "react-router-dom";
 import { WalletProvider } from "@/hooks/useWallet";
 import { ThemeProvider } from "next-themes";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
@@ -12,6 +12,8 @@ import { useTradeDeadlineReminders } from "@/hooks/useTradeDeadlineReminders";
 import { NotificationsProvider, useNotifications } from "@/hooks/useNotifications";
 import { PhoneFirst } from "@/components/PhoneFirst";
 import { PreviewBanner } from "@/components/PreviewBanner";
+import { ShareHost } from "@/components/Share";
+import { refFromLink } from "@/lib/share";
 import { lazy, Suspense } from "react";
 import Index from "./pages/Index";
 
@@ -25,6 +27,20 @@ const WalletCheck = lazy(() => import("./pages/WalletCheck"));
 const Terms = lazy(() => import("./pages/Terms"));
 
 const queryClient = new QueryClient();
+
+/**
+ * /s/<ref>, a share link. The server normally answers it (a page with a preview card for Telegram, WhatsApp, X);
+ * where it doesn't, this sends the visitor to the pool or trade the same way. Other parameters (?inlinx=1) are kept.
+ */
+function ShareRedirect() {
+  const { ref = "" } = useParams();
+  const { search } = useLocation();
+  const r = refFromLink(ref);
+  const q = new URLSearchParams(search);
+  if (r) q.set("offer", r);
+  const qs = q.toString();
+  return <Navigate to={`/${qs ? `?${qs}` : ""}`} replace />;
+}
 
 // Component to initialize WebSocket connection and new-message notifications
 function OnlineStatusProvider({ children }: { children: React.ReactNode }) {
@@ -50,12 +66,14 @@ const App = () => (
         <PreviewBanner />
         <BrowserRouter>
           <WalletProvider>
+            <ShareHost />
             <OnlineStatusProvider>
               <NotificationsProvider>
               <DeadlineFallback />
               <Suspense fallback={null}>
               <Routes>
                 <Route path="/" element={<PhoneFirst><Index /></PhoneFirst>} />
+                <Route path="/s/:ref" element={<ShareRedirect />} />
                 <Route path="/u/:wallet" element={<Profile />} />
                 <Route path="/admin" element={<Admin />} />
                 <Route path="/alerts" element={<Alerts />} />

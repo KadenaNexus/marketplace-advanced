@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { MarketTag } from "./MarketTag";
 import { TradeCode } from "./TradeCode";
+import { ShareButton, tradeShareItem } from "./Share";
 import type { IUnsignedCommand } from "@kadena/client";
 import { createPortal } from "react-dom";
 import { useQuery, useQueries, useQueryClient } from "@tanstack/react-query";
@@ -1683,6 +1684,7 @@ const TX_CONFIRM_MESSAGE = "Transaction in progress… Confirming on the Kadena 
               <TradeCode offerId={selectedEscrow.offerId} copy className="mt-0.5" />
               {isV11(selectedEscrow) && <span className="ml-2 text-xs text-muted-foreground">{chainLabel(selectedEscrow.trade.chain)}</span>}
             </div>
+            {isV11(selectedEscrow) && <ShareButton item={tradeShareItem(selectedEscrow.trade)} iconOnly variant="ghost" className="h-11 w-11" />}
             <span className="shrink-0 pr-2"><EscrowStatus state={shownState(selectedEscrow)} /></span>
           </header>
           <div className="flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4">
@@ -1712,7 +1714,7 @@ const TX_CONFIRM_MESSAGE = "Transaction in progress… Confirming on the Kadena 
         <Card className="escrow-card">
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-3 text-lg"><TradeCode offerId={selectedEscrow.offerId} copy size="md" /><span className="font-mono text-sm font-normal text-muted-foreground">{selectedEscrow.offerId}</span>{isV11(selectedEscrow) && <span className="text-xs font-normal text-muted-foreground">{chainLabel(selectedEscrow.trade.chain)}</span>}</CardTitle>
+              <CardTitle className="flex items-center gap-3 text-lg"><TradeCode offerId={selectedEscrow.offerId} copy size="md" /><span className="font-mono text-sm font-normal text-muted-foreground">{selectedEscrow.offerId}</span>{isV11(selectedEscrow) && <span className="text-xs font-normal text-muted-foreground">{chainLabel(selectedEscrow.trade.chain)}</span>}{isV11(selectedEscrow) && <ShareButton item={tradeShareItem(selectedEscrow.trade)} variant="ghost" className="h-9 px-2" />}</CardTitle>
               <EscrowStatus
                 state={
                   existingDispute && (existingDispute.status === "OPEN" || existingDispute.status === "UNDER_REVIEW")

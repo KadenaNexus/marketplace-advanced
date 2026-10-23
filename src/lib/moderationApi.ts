@@ -1,5 +1,6 @@
 /** Hiding forgotten open offers from the market (arbiter only). See server/offerModeration.js. */
 import { authProof } from "@/lib/session";
+import { authHeaders } from "./authHeaders";
 
 type Who = { account: string; publicKey: string };
 export type HideReason = "expired" | "inactive" | "stale" | "other";
@@ -19,8 +20,7 @@ export async function getHiddenOffers(): Promise<HiddenOffer[]> {
 }
 
 export async function getAdminOpenOffers(w: Who): Promise<AdminOpenOffer[]> {
-  const q = new URLSearchParams({ wallet: w.account, publicKey: w.publicKey, signedCmd: await proof(w) });
-  const r = await fetch(`/api/admin/open-offers?${q}`);
+  const r = await fetch("/api/admin/open-offers", { headers: authHeaders(w.account, w.publicKey, await proof(w)) });
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Could not load open offers");
   return r.json();
 }

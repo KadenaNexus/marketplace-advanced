@@ -4,6 +4,7 @@
  * admin's hidden flag. Every reader here treats a 404 (server without these routes yet) as "nothing known".
  */
 import type { Pool } from "./v11";
+import { authHeaders } from "./authHeaders";
 
 export interface PoolDetails { networks: string[]; notes: string }
 /** A pool as the server lists it: chain fields plus its off-chain details. */
@@ -22,6 +23,16 @@ export async function getPoolsIndex(): Promise<PoolListing[] | null> {
     const d = await r.json();
     return Array.isArray(d) ? d : null;
   } catch { return null; }
+}
+
+/** GET /api/pools/of/:wallet: that wallet's pools, closed ones included (the chain lists open pools only). [] when unknown. */
+export async function getPoolsOf(wallet: string): Promise<PoolListing[]> {
+  try {
+    const r = await fetch(`/api/pools/of/${encodeURIComponent(wallet)}`);
+    if (!r.ok) return [];
+    const d = await r.json();
+    return Array.isArray(d) ? d.map((p) => ({ ...p, hidden: !!p.hidden })) : [];
+  } catch { return []; }
 }
 
 /** GET /api/pools/:id/details: the networks and notes (public). Null when unknown. */
@@ -51,9 +62,8 @@ export async function putPoolDetails(poolId: string, body: { networks: string[];
  * chain instead of answering 403.
  */
 export async function getPoolPayout(poolId: string, a: Auth, tradeId?: string): Promise<Record<string, string> | null> {
-  const q = new URLSearchParams({ wallet: a.wallet, publicKey: a.publicKey, signedCmd: proof(a.signedCmd) });
-  if (tradeId) q.set("tradeId", tradeId);
-  const r = await fetch(`/api/pools/${encodeURIComponent(poolId)}/payout?${q}`);
+  const q = tradeId ? `?${new URLSearchParams({ tradeId })}` : "";
+  const r = await fetch(`/api/pools/${encodeURIComponent(poolId)}/payout${q}`, { headers: authHeaders(a.wallet, a.publicKey, a.signedCmd) });
   if (r.status === 403 || r.status === 404) return null;
   if (!r.ok) throw new Error(await errorOf(r, "Could not load the payment details"));
   const d = await r.json();

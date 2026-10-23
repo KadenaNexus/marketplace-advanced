@@ -12,6 +12,7 @@ import { chainLabel, isGiveawayPool, isInstant, missingReceivingAddress, network
 import { NEW_TRADER_TRADES, isNewTrader } from "@/lib/trust";
 import { formatFiat, cn } from "@/lib/utils";
 import { Gift, Lock, Radar, Settings2, Zap } from "lucide-react";
+import { ShareButton, poolShareItem } from "../Share";
 
 export const kdaAmount = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 4 });
 export const isExpired = (p: { expiresAt?: string }) => !!p.expiresAt && Date.parse(p.expiresAt) <= Date.now();
@@ -130,6 +131,7 @@ export function PoolCard({ pool: p, profileMap, ratingSummaryMap, completedMap, 
             {takeable ? action : closed ? "Closed" : expired ? "Expired" : noAddress ? "No address yet" : "Nothing left"}
           </Button>
         )}
+        {!closed && !expired && <ShareButton item={poolShareItem(p)} iconOnly />}
       </div>
     </div>
   );

@@ -9,6 +9,7 @@
  * by it, so the same id on the two chains has two rows.
  *
  *   GET /api/pools                   -> [pool…]  open pools from the chain + networks, notes, hidden flag (cached ~15 s)
+ *   GET /api/pools/of/:wallet        -> [pool…]  that wallet's pools, open and closed, newest first (public, no addresses)
  *   GET /api/pools/:poolId/details   -> { poolId, networks, notes, updatedAt }                 (public, no addresses)
  *   PUT /api/pools/:poolId/details   { wallet, publicKey, signedCmd, networks, payout, notes? } (the creator, once the pool is on the chain)
  *   GET /api/pools/:poolId/payout    (wallet, publicKey, signedCmd[, tradeId] in the query)
@@ -21,6 +22,8 @@ const TRC20 = /^T[1-9A-HJ-NP-Za-km-z]{33}$/, ERC20 = /^0x[0-9a-fA-F]{40}$/;
 /** network -> address shape (same list as the client's new-offer form) */
 export const NETWORKS = { "USDT:TRC20": TRC20, "USDT:ERC20": ERC20, "USDC:ERC20": ERC20 };
 const MAX_NOTES = 500;
+/** The most pools listed for one creator (newest first). */
+export const MAX_MY_POOLS = 100;
 /** A trade's other side sees the pool's addresses only while there is, or was, something to pay. */
 export const PAYOUT_VISIBLE_STATES = ["FUNDED", "PAID", "DISPUTED", "COMPLETED"];
 
@@ -79,6 +82,34 @@ export function registerPoolRoutes(app, { getPool, requireAuth, sendAuthError, c
       ...p, networks: d.get(p.poolId)?.networks || [], notes: d.get(p.poolId)?.notes || "",
       hidden: h.has(p.poolId) ? { reason: h.get(p.poolId).reason, hiddenAt: h.get(p.poolId).hidden_at } : null,
     })));
+  });
+
+  // A creator's pools, closed ones included (the chain lists open pools only): pools with trades from the cached
+  // read, plus pools this server knows were created by the wallet (their details, or a create-offer it recorded).
+  // Public, like everything on the chain; no addresses.
+  app.get("/api/pools/of/:wallet", async (req, res) => {
+    const w = String(req.params.wallet || "");
+    if (!/^[a-z]:[A-Za-z0-9_.:-]{3,250}$/.test(w)) return res.status(400).json({ error: "Bad wallet" });
+    let c;
+    try { c = await chain(); } catch { return chainDown(res); }
+    const db = getPool();
+    const [det, txs] = await Promise.all([
+      db.query("SELECT pool_id FROM pool_details WHERE creator = $1 ORDER BY created_at DESC LIMIT $2", [w, MAX_MY_POOLS]),
+      db.query("SELECT DISTINCT offer_id FROM trade_txs WHERE sender = $1 AND fn = 'create-offer' AND status = 'confirmed' LIMIT $2", [w, MAX_MY_POOLS]).catch(() => ({ rows: [] })),
+    ]);
+    const byId = new Map(c.pools.filter((p) => p.creator === w).map((p) => [p.poolId, p]));
+    const extra = [...new Set([...det.rows.map((r) => r.pool_id), ...txs.rows.map((r) => r.offer_id)])]
+      .filter((id) => okId(id) && !byId.has(id) && parseRef(id).id.startsWith("pool-")).slice(0, MAX_MY_POOLS);
+    for (const id of extra) {
+      let p; try { p = await readPoolFn(id); } catch { continue; }
+      if (p && p.creator === w) byId.set(p.poolId, p);
+    }
+    const all = [...byId.values()].sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? "")).slice(0, MAX_MY_POOLS);
+    const ids = all.map((p) => p.poolId);
+    const d = ids.length ? (await db.query("SELECT pool_id, networks, notes FROM pool_details WHERE pool_id = ANY($1)", [ids])).rows : [];
+    const dm = new Map(d.map((x) => [x.pool_id, x]));
+    res.set("Cache-Control", "no-store");
+    return res.json(all.map((p) => ({ ...p, networks: dm.get(p.poolId)?.networks || [], notes: dm.get(p.poolId)?.notes || "", hidden: null })));
   });
 
   app.get("/api/pools/:poolId/details", async (req, res) => {

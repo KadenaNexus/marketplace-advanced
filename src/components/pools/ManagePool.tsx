@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,7 +11,7 @@ import { useWallet } from "@/hooks/useWallet";
 import { useRefreshV11, useV11Config } from "@/hooks/useV11";
 import { useAutoRelease } from "@/hooks/useAutoRelease";
 import { watchedText } from "@/lib/autoReleaseApi";
-import { appChainShortfall } from "@/lib/kadena";
+import { appChainShortfall, fetchTradeTxs, getTxExplorerUrl } from "@/lib/kadena";
 import { GAS_V11, buildClosePoolTx, buildTopUpTx, buildUpdatePoolTx, buildWithdrawTx, gasKda, poolVault, type Trade } from "@/lib/v11";
 import { exactPay, sendV11 } from "@/lib/v11ui";
 import { getPoolPayout, putPoolDetails, type PoolListing } from "@/lib/poolsApi";
@@ -21,7 +23,8 @@ import { ConfirmDialog } from "../TradeSafety";
 import type { EscrowState } from "@/lib/kadena";
 import { formatFiat, cn } from "@/lib/utils";
 import { kdaAmount, isExpired } from "./PoolCard";
-import { ArrowDownToLine, ArrowUpFromLine, Loader2, Pencil, Radar, XCircle } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, ExternalLink, Loader2, Pencil, Radar, XCircle } from "lucide-react";
+import { ShareButton, poolShareItem } from "../Share";
 import { toast } from "sonner";
 
 const num = (s: string) => { const n = parseFloat(s); return Number.isFinite(n) ? n : NaN; };
@@ -40,7 +43,7 @@ interface ManagePoolProps {
 export function ManagePool({ pool: p, open, onOpenChange, trades, onOpenTrade }: ManagePoolProps) {
   const { account } = useWallet();
   const refresh = useRefreshV11();
-  const [tab, setTab] = useState<"trades" | "topup" | "withdraw" | "edit">("trades");
+  const [tab, setTab] = useState<"trades" | "history" | "topup" | "withdraw" | "edit">("trades");
   const [amount, setAmount] = useState("");
   const [min, setMin] = useState(""); const [max, setMax] = useState(""); const [price, setPrice] = useState("");
   const [payWindow, setPayWindow] = useState(1800); const [expiryDays, setExpiryDays] = useState(0);
@@ -74,6 +77,10 @@ export function ManagePool({ pool: p, open, onOpenChange, trades, onOpenTrade }:
       })();
     }
   }, [open, p, account, stable]);
+  // the pool's own transactions (create, top-ups, withdrawals, edits, close), recorded by the server from each signed step
+  const { data: poolTxs = [], isLoading: txsLoading } = useQuery({
+    queryKey: ["trade-txs", p?.poolId], queryFn: () => fetchTradeTxs(p!.poolId), enabled: open && !!p && tab === "history", staleTime: 15 * 1000,
+  });
   // its own effect: the platform's agent may load after the sheet opened, and must not reset the other fields
   useEffect(() => { if (open && p) setAutoOn(!!p.agent && p.agent === auto.agent); }, [open, p, auto.agent]);
 
@@ -139,9 +146,10 @@ export function ManagePool({ pool: p, open, onOpenChange, trades, onOpenTrade }:
     });
   };
 
-  type Tab = "trades" | "topup" | "withdraw" | "edit";
+  type Tab = "trades" | "history" | "topup" | "withdraw" | "edit";
   const tabs: { id: Tab; label: string }[] = [
     { id: "trades", label: `Trades (${trades.length})` },
+    { id: "history", label: "History" },
     ...(!closed ? [{ id: "topup" as Tab, label: "Top up" }, { id: "withdraw" as Tab, label: "Withdraw" }, { id: "edit" as Tab, label: "Edit" }] : []),
   ];
 
@@ -149,7 +157,10 @@ export function ManagePool({ pool: p, open, onOpenChange, trades, onOpenTrade }:
     <Sheet open={open} onOpenChange={(o) => { if (!busy) onOpenChange(o); }}>
       <SheetContent side="bottom" className="mx-auto max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl px-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:rounded-2xl sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2 sm:border">
         <SheetHeader className="text-left">
-          <SheetTitle className="flex items-center gap-2 font-display text-xl">Your {free ? "giveaway" : p.side === "SELL" ? "sell pool" : "buy offer"} <TradeCode offerId={p.poolId} copy /></SheetTitle>
+          <SheetTitle className="flex items-center gap-2 font-display text-xl">
+            Your {free ? "giveaway" : p.side === "SELL" ? "sell pool" : "buy offer"} <TradeCode offerId={p.poolId} copy />
+            {!closed && <ShareButton item={poolShareItem(p)} variant="ghost" className="ml-auto h-9 px-2" />}
+          </SheetTitle>
           <SheetDescription>
             {kdaAmount(p.available)} KDA available · {kdaAmount(p.locked)} in trades · {p.takes} take{p.takes === 1 ? "" : "s"}
             {!free && <> · {formatFiat(p.price, p.currency)} {p.currency}/KDA</>}
@@ -181,6 +192,10 @@ export function ManagePool({ pool: p, open, onOpenChange, trades, onOpenTrade }:
                 ))}
               </ul>
             )
+          )}
+
+          {tab === "history" && (
+            <PoolHistory createdAt={p.createdAt} txs={poolTxs} loading={txsLoading} trades={trades} free={free} sell={p.side === "SELL"} onOpenTrade={onOpenTrade} />
           )}
 
           {(tab === "topup" || tab === "withdraw") && (
@@ -277,5 +292,57 @@ export function ManagePool({ pool: p, open, onOpenChange, trades, onOpenTrade }:
           body={`${p.side === "SELL" ? `${kdaAmount(p.available)} unsold KDA comes back to your wallet.` : "Nothing is locked."} ${open_ ? `${open_} open trade${open_ === 1 ? "" : "s"} continue until they finish.` : "No trade is open on it."}`} />
       </SheetContent>
     </Sheet>
+  );
+}
+
+type PoolTx = Awaited<ReturnType<typeof fetchTradeTxs>>[number];
+
+/**
+ * Everything that happened to a pool, newest first: its own transactions (posted, topped up, withdrawn, edited,
+ * closed) with explorer links, and each take with its trade's state.
+ */
+function PoolHistory({ createdAt, txs, loading, trades, free, sell, onOpenTrade }: {
+  createdAt?: string; txs: PoolTx[]; loading: boolean; trades: Trade[]; free: boolean; sell: boolean; onOpenTrade: (tradeId: string) => void;
+}) {
+  type Row = { at: string; key: string; node: JSX.Element };
+  const when = (iso?: string) => (iso ? format(new Date(iso), "d MMM yyyy, HH:mm") : "");
+  const rows: Row[] = [
+    ...txs.map((t) => ({
+      at: t.at, key: t.requestKey,
+      node: (
+        <a href={getTxExplorerUrl(t.requestKey)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 rounded-lg bg-muted p-3 hover:bg-muted/70">
+          <span className="min-w-0 flex-1">
+            <span className="block font-medium">{t.fn === "create-offer" ? "Posted" : t.action}{t.status === "pending" ? " (confirming…)" : ""}</span>
+            <span className="block text-xs text-muted-foreground">{when(t.at)} · <span className="font-mono">{t.requestKey.slice(0, 10)}…</span></span>
+          </span>
+          <ExternalLink className="h-4 w-4 shrink-0 text-primary" />
+        </a>
+      ),
+    })),
+    ...trades.filter((t) => t.fundedAt).map((t) => ({
+      at: t.fundedAt!, key: t.tradeId,
+      node: (
+        <button type="button" onClick={() => onOpenTrade(t.tradeId)} className="flex w-full items-center justify-between gap-3 rounded-lg border border-border p-3 text-left hover:border-primary">
+          <span className="min-w-0">
+            <span className="block font-medium">{free ? "Claimed" : "Taken"}: {kdaAmount(t.amount)} KDA</span>
+            <span className="block truncate text-xs text-muted-foreground">{when(t.fundedAt)} · {sell ? "buyer" : "seller"} {(sell ? t.buyer : t.seller).slice(0, 10)}…</span>
+          </span>
+          <EscrowStatus state={t.state as EscrowState} />
+        </button>
+      ),
+    })),
+  ];
+  // the pool's creation, from the chain, when no recorded transaction says so
+  if (createdAt && !txs.some((t) => t.fn === "create-offer")) {
+    rows.push({ at: createdAt, key: "created", node: <div className="rounded-lg bg-muted p-3"><span className="block font-medium">Posted</span><span className="block text-xs text-muted-foreground">{when(createdAt)}</span></div> });
+  }
+  rows.sort((a, b) => b.at.localeCompare(a.at));
+  if (loading && rows.length === 0) return <div className="flex justify-center py-6"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+  if (rows.length === 0) return <p className="py-6 text-center text-sm text-muted-foreground">No history recorded yet.</p>;
+  return (
+    <div className="space-y-2">
+      <ol className="space-y-2">{rows.map((r) => <li key={r.key}>{r.node}</li>)}</ol>
+      <p className="text-xs text-muted-foreground">Steps made before this list existed may be missing here; they are still on the chain.</p>
+    </div>
   );
 }

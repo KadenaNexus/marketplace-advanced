@@ -71,6 +71,8 @@ jobs:
         run: npm run test:auto-release
       - name: Run dispute authorization tests
         run: npm run test:authz
+      - name: Run share link tests
+        run: npm run test:share
   deploy:
     name: deploy
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

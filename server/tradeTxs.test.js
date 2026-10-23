@@ -44,6 +44,20 @@ test("reads the escrow call from a signed command", () => {
   assert.equal(parseEscrowCall(cmdFor(`(free.p2p-escrow-v11.release "x-1")`, SELLER), "free.p2p-escrow-v10"), null, "only the modules asked for");
 });
 
+test("a free transaction (paid by the gas station): the id comes from the data, the wallet from the signer's ACCOUNT_AUTH", () => {
+  const key = "b".repeat(64), STATION = "u:free.p2p-escrow-v11-gas.gas-payer-guard:abc";
+  const free = (code, data, signers) => JSON.stringify({ networkId: "mainnet01", payload: { exec: { code, data } }, signers, meta: { chainId: "1", sender: STATION }, nonce: `f${n++}` });
+  const auth = [{ pubKey: key, clist: [{ name: "free.p2p-escrow-v11-gas.GAS_PAYER", args: [BUYER, { int: 2000 }, { decimal: "0.00000001" }] }, { name: "free.p2p-escrow-v11.ACCOUNT_AUTH", args: [BUYER] }] }];
+  const TAKE = '(free.p2p-escrow-v11.take-offer (read-msg "trade") (read-msg "offer") (read-msg "taker") (read-decimal "amount"))';
+  assert.deepEqual(parseEscrowCall(free(TAKE, { trade: "trade-1-abc", offer: "pool-1-xyz" }, auth)), { fn: "take-offer", offerId: "trade-1-abc", sender: BUYER, chain: "1" });
+  assert.deepEqual(parseEscrowCall(free('(free.p2p-escrow-v11.mark-paid (read-msg "trade"))', { trade: "trade-1-abc" }, auth))?.fn, "mark-paid");
+  assert.equal(parseEscrowCall(free(TAKE, {}, auth)), null, "no trade in the data");
+  assert.equal(parseEscrowCall(free(TAKE, { trade: 'x"y' }, auth)), null);
+  // an ACCOUNT_AUTH for another key's account is not taken as the sender
+  const other = [{ pubKey: "c".repeat(64), clist: [{ name: "free.p2p-escrow-v11.ACCOUNT_AUTH", args: [BUYER] }] }];
+  assert.equal(parseEscrowCall(free(TAKE, { trade: "trade-1-abc" }, other)).sender, "");
+});
+
 test("v11 on chain 2: the step is saved under the chain-2 reference; v10 and unknown chains are refused", () => {
   const on = (chain) => ({ meta: { chainId: chain, sender: BUYER, gasLimit: 3000, gasPrice: 1e-8, ttl: 600, creationTime: 1760000000 } });
   assert.deepEqual(parseEscrowCall(cmdFor(`(free.p2p-escrow-v11.take-and-settle "trade-1-abc" "pool-1-xyz" "${BUYER}" 10.0 n_e595727b657fbbb3b8e362a05a7bb8d12865c1ff.kb-ETH 0.000045)`, BUYER, on("2"))),

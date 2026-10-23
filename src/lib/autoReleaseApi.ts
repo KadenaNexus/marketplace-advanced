@@ -5,6 +5,7 @@
  * (a server without these routes) as "off".
  */
 import { networkLabel, paymentNetwork } from "./markets";
+import { authHeaders } from "./authHeaders";
 
 export interface AutoReleaseInfo {
   enabled: boolean;
@@ -50,8 +51,7 @@ export async function getAutoReleaseInfo(): Promise<AutoReleaseInfo> {
 
 /** GET /api/v11/trades/:ref/auto (the two sides and the arbiter). null when not allowed or not served. */
 export async function getTradeAuto(tradeRef: string, a: Auth): Promise<TradeAuto | null> {
-  const q = new URLSearchParams({ wallet: a.wallet, publicKey: a.publicKey, signedCmd: proof(a.signedCmd) });
-  const r = await fetch(`/api/v11/trades/${encodeURIComponent(tradeRef)}/auto?${q}`);
+  const r = await fetch(`/api/v11/trades/${encodeURIComponent(tradeRef)}/auto`, { headers: authHeaders(a.wallet, a.publicKey, a.signedCmd) });
   if (r.status === 403 || r.status === 404) return null;
   if (!r.ok) throw new Error("Could not load auto-release");
   return (await r.json()) as TradeAuto;
@@ -73,8 +73,7 @@ export interface IncomingCheck {
  */
 export async function getIncoming(tradeRef: string, a: Auth): Promise<IncomingCheck | null> {
   try {
-    const q = new URLSearchParams({ wallet: a.wallet, publicKey: a.publicKey, signedCmd: proof(a.signedCmd) });
-    const r = await fetch(`/api/v11/trades/${encodeURIComponent(tradeRef)}/incoming?${q}`);
+    const r = await fetch(`/api/v11/trades/${encodeURIComponent(tradeRef)}/incoming`, { headers: authHeaders(a.wallet, a.publicKey, a.signedCmd) });
     if (!r.ok) return null;
     const d = await r.json();
     return { checked: d?.checked === true, reason: d?.reason ?? null, failed: Array.isArray(d?.failed) ? d.failed : [], hold: d?.hold === true, payments: Array.isArray(d?.payments) ? d.payments : [] };

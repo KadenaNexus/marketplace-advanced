@@ -1,3 +1,4 @@
+import { authHeaders } from "./authHeaders";
 /** Proof of payment the buyer adds with Mark as Paid. See server/proofs.js. */
 
 export interface Proof { reference: string | null; fileUrl: string | null; fileName: string | null; at: string }
@@ -5,8 +6,7 @@ type Auth = { wallet: string; publicKey: string; signedCmd: unknown };
 const proof = (s: unknown) => (typeof s === "string" ? s : JSON.stringify(s));
 
 export async function getProofs(offerId: string, a: Auth): Promise<Proof[]> {
-  const q = new URLSearchParams({ wallet: a.wallet, publicKey: a.publicKey, signedCmd: proof(a.signedCmd) });
-  const r = await fetch(`/api/offers/${encodeURIComponent(offerId)}/proof?${q}`);
+  const r = await fetch(`/api/offers/${encodeURIComponent(offerId)}/proof`, { headers: authHeaders(a.wallet, a.publicKey, a.signedCmd) });
   if (r.status === 403 || r.status === 404) return [];
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Could not load the proof of payment");
   return r.json();

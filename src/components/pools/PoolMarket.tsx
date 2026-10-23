@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,11 +12,14 @@ import { fetchRatingSummariesBulk, type RatingSummary } from "@/lib/ratingApi";
 import { initializeOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useCompletedCounts } from "../Trust";
 import { KADENA_TOKENS, PAYMENT_NETWORKS, isGiveawayPool, isInstant, missingReceivingAddress, poolFitsTable } from "@/lib/markets";
-import type { PoolListing } from "@/lib/poolsApi";
+import { getPoolsOf, type PoolListing } from "@/lib/poolsApi";
 import { PoolCard, isTakeable } from "./PoolCard";
 import { TakeSheet } from "./TakeSheet";
 import { ManagePool } from "./ManagePool";
 import { Loader2, RefreshCw, SlidersHorizontal } from "lucide-react";
+import { OpenLinkButton } from "../Share";
+import { isPoolRef, refFromLink } from "@/lib/share";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 export interface PoolFilters { pay: string; amount: string; instantOnly: boolean }
@@ -104,6 +107,24 @@ export function PoolMarket({ side, refreshTrigger = 0, filters: outer }: PoolMar
 
   useEffect(() => { if (refreshTrigger) void refetch(); }, [refreshTrigger, refetch]);
 
+  // A shared link (/s/<pool> → ?offer=<pool>): open that pool's take sheet (or Manage, for its creator) once the
+  // pools are loaded, and take the parameter out of the address.
+  const [params, setParams] = useSearchParams();
+  const linked = refFromLink(params.get("offer") ?? params.get("pool") ?? "");
+  const linkDone = useRef<string | null>(null);
+  useEffect(() => {
+    if (!linked || !isPoolRef(linked) || linkDone.current === linked || isLoading) return;
+    linkDone.current = linked;
+    const p = pools.find((x) => x.poolId === linked);
+    const next = new URLSearchParams(params); next.delete("offer"); next.delete("pool");
+    setParams(next, { replace: true });
+    if (!p) { toast.info("That offer is closed", { description: "Here's what's open now." }); return; }
+    if (p.creator === me) setManaging(p);
+    else if (isTakeable(p)) setTaking(p);
+    else toast.info("Nothing is left in that offer");
+    setTimeout(() => document.getElementById(`pool-card-${p.poolId}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 200);
+  }, [linked, isLoading, pools, me, params, setParams]);
+
   const shown = useMemo(() => filterPools(pools, side, filters, me), [pools, side, filters, me]);
   const info = useTraderInfo(shown.map((p) => p.creator));
   const openTradesOf = (p: PoolListing) => trades.filter((t) => t.poolId === p.poolId && ["FUNDED", "PAID", "DISPUTED"].includes(t.state)).length;
@@ -122,6 +143,7 @@ export function PoolMarket({ side, refreshTrigger = 0, filters: outer }: PoolMar
         <p className="text-sm text-muted-foreground" aria-live="polite">
           {isLoading && pools.length === 0 ? "Loading…" : `${shown.length} ${shown.length === 1 ? "offer" : "offers"}`}
         </p>
+        <OpenLinkButton className="px-2" />
         <Button variant="ghost" size="sm" className="h-10 gap-2" onClick={() => void refetch()} disabled={isLoading}>
           {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}Refresh
         </Button>
@@ -150,28 +172,53 @@ export function PoolMarket({ side, refreshTrigger = 0, filters: outer }: PoolMar
   );
 }
 
-/** The connected wallet's pools (any side, any state), with Manage. For the My trades screen. */
+/**
+ * The connected wallet's pools, with Manage: open ones, then the closed ones (from the server, since the chain lists
+ * open pools only). For the My trades screen.
+ */
 export function MyPools({ onOpenTrade }: { onOpenTrade?: (tradeId: string) => void }) {
   const { account } = useWallet();
   const me = account?.account;
   const navigate = useNavigate();
   const { pools } = usePools();
   const { data: trades = [] } = useTrades();
+  const { data: ofMe = [] } = useQuery({ queryKey: ["pools-of", me], queryFn: () => getPoolsOf(me!), enabled: !!me, staleTime: 15 * 1000 });
   const [managing, setManaging] = useState<PoolListing | null>(null);
-  const mine = useMemo(() => pools.filter((p) => p.creator === me).sort((a, b) => (a.state === b.state ? (b.createdAt ?? "").localeCompare(a.createdAt ?? "") : a.state === "OPEN" ? -1 : 1)), [pools, me]);
+  const [showClosed, setShowClosed] = useState(false);
+  const mine = useMemo(() => {
+    // the live chain read wins for open pools; the server list adds the closed ones
+    const byId = new Map<string, PoolListing>(ofMe.map((p) => [p.poolId, p]));
+    for (const p of pools) if (p.creator === me) byId.set(p.poolId, p);
+    return [...byId.values()].sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+  }, [pools, ofMe, me]);
+  const openPools = mine.filter((p) => p.state === "OPEN");
+  const closedPools = mine.filter((p) => p.state !== "OPEN");
   const info = useTraderInfo([]);
   if (!me || mine.length === 0) return null;
-  const managingLive = managing ? pools.find((p) => p.poolId === managing.poolId) ?? managing : null;
+  const managingLive = managing ? mine.find((p) => p.poolId === managing.poolId) ?? managing : null;
   const open = (id: string) => { setManaging(null); (onOpenTrade ?? ((t: string) => navigate(`/?offer=${encodeURIComponent(t)}`)))(id); };
+  const card = (p: PoolListing) => (
+    <PoolCard key={p.poolId} pool={p} profileMap={info.profileMap} onTake={() => {}} onManage={setManaging}
+      openTrades={trades.filter((t) => t.poolId === p.poolId && ["FUNDED", "PAID", "DISPUTED"].includes(t.state)).length} />
+  );
   return (
     <section className="space-y-3">
-      <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Your pools</h3>
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-        {mine.map((p) => (
-          <PoolCard key={p.poolId} pool={p} profileMap={info.profileMap} onTake={() => {}} onManage={setManaging}
-            openTrades={trades.filter((t) => t.poolId === p.poolId && ["FUNDED", "PAID", "DISPUTED"].includes(t.state)).length} />
-        ))}
-      </div>
+      {openPools.length > 0 && (
+        <>
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Your pools</h3>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">{openPools.map(card)}</div>
+        </>
+      )}
+      {closedPools.length > 0 && (
+        <div className="space-y-3">
+          <button type="button" onClick={() => setShowClosed((v) => !v)} aria-expanded={showClosed}
+            className="flex w-full items-center justify-between rounded-xl border border-border px-3 py-2.5 text-sm font-semibold text-muted-foreground hover:border-primary">
+            <span>Closed pools ({closedPools.length})</span>
+            <span aria-hidden="true">{showClosed ? "−" : "+"}</span>
+          </button>
+          {showClosed && <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">{closedPools.map(card)}</div>}
+        </div>
+      )}
       <ManagePool pool={managingLive} open={!!managing} onOpenChange={(o) => { if (!o) setManaging(null); }}
         trades={managing ? trades.filter((t) => t.poolId === managing.poolId).sort((a, b) => (b.fundedAt ?? "").localeCompare(a.fundedAt ?? "")) : []} onOpenTrade={open} />
     </section>

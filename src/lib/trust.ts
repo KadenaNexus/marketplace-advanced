@@ -1,5 +1,6 @@
 /** New-trader limit and terms of use. See server/trust.js. */
 import { authProof } from "@/lib/session";
+import { authHeaders } from "./authHeaders";
 
 /** Until a wallet has this many completed trades, each trade it creates or accepts is limited to NEW_TRADER_MAX_KDA. */
 export const NEW_TRADER_TRADES = 3;
@@ -31,8 +32,7 @@ export interface TermsStatus { version: string; accepted: boolean }
 
 export async function getTerms(w: Who): Promise<TermsStatus> {
   const s = await authProof(w.account, w.publicKey);
-  const q = new URLSearchParams({ wallet: w.account, publicKey: w.publicKey, signedCmd: typeof s === "string" ? s : JSON.stringify(s) });
-  const r = await fetch(`/api/terms?${q}`);
+  const r = await fetch("/api/terms", { headers: authHeaders(w.account, w.publicKey, s) });
   if (!r.ok) throw new Error("Could not check the terms");
   return r.json();
 }

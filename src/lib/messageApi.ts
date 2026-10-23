@@ -1,3 +1,4 @@
+import { authHeaders } from "./authHeaders";
 // Relative "" is proxied in dev. Vite proxy can break multipart/form-data; for attachments use direct backend URL in dev.
 const API = "";
 const API_DIRECT =
@@ -80,14 +81,8 @@ export interface GetMessagesParams {
 
 export async function getMessages(params: GetMessagesParams): Promise<UserMessage[]> {
   const { otherWallet, wallet, publicKey, signedCmd } = params;
-  const q = new URLSearchParams({
-    wallet,
-    publicKey,
-    signedCmd: typeof signedCmd === "string" ? signedCmd : JSON.stringify(signedCmd),
-  });
-  const url = `${API}/api/messages/${encodeURIComponent(otherWallet)}?${q.toString()}`;
-  console.log("[getMessages] Fetching:", url.replace(/signedCmd=[^&]+/, "signedCmd=..."));
-  const res = await fetch(url);
+  const url = `${API}/api/messages/${encodeURIComponent(otherWallet)}`;
+  const res = await fetch(url, { headers: authHeaders(wallet, publicKey, signedCmd) });
   if (!res.ok) {
     const errorText = await res.text().catch(() => res.statusText);
     console.error("[getMessages] Error:", res.status, errorText);
@@ -128,12 +123,7 @@ export interface GetUnreadCountParams {
 
 export async function getUnreadCount(params: GetUnreadCountParams): Promise<{ unreadCount: number }> {
   const { wallet, publicKey, signedCmd } = params;
-  const q = new URLSearchParams({
-    wallet,
-    publicKey,
-    signedCmd: typeof signedCmd === "string" ? signedCmd : JSON.stringify(signedCmd),
-  });
-  const res = await fetch(`${API}/api/messages/unread-count?${q.toString()}`);
+  const res = await fetch(`${API}/api/messages/unread-count`, { headers: authHeaders(wallet, publicKey, signedCmd) });
   if (!res.ok) {
     throw new Error(await res.text().catch(() => res.statusText));
   }
@@ -149,12 +139,7 @@ export interface OfferThread {
 
 /** For an offer's creator: who has written about this offer (newest first). */
 export async function getOfferThreads(params: { offerId: string; wallet: string; publicKey: string; signedCmd: unknown }): Promise<OfferThread[]> {
-  const q = new URLSearchParams({
-    wallet: params.wallet,
-    publicKey: params.publicKey,
-    signedCmd: typeof params.signedCmd === "string" ? params.signedCmd : JSON.stringify(params.signedCmd),
-  });
-  const res = await fetch(`${API}/api/messages/offer/${encodeURIComponent(params.offerId)}/threads?${q.toString()}`);
+  const res = await fetch(`${API}/api/messages/offer/${encodeURIComponent(params.offerId)}/threads`, { headers: authHeaders(params.wallet, params.publicKey, params.signedCmd) });
   if (!res.ok) throw new Error((await res.text().catch(() => "")) || "Could not load conversations");
   return res.json();
 }
