@@ -23,7 +23,7 @@ From the Marketplace folder on the server:
 
 Send about **1 KDA on chain 1** to the printed `k:` account. Each release costs well under 0.001 KDA, so 1 KDA covers more than a thousand releases.
 
-## 3. Name the agent in the contract (Naif, both governance wallets)
+## 3. Name the agent in the contract (Saudi.KDA, both governance wallets)
 
 After the v11 deployment, in Chainweaver on **chain 1**, signed by **both** governance keys:
 

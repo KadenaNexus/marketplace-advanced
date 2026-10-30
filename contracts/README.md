@@ -57,7 +57,7 @@ runs on, and reads the token's own `precision`.
    also treat a chain without the contract as empty).
 
 Deployed versions
-- v10: `free.p2p-escrow-v10`, chain 1. Deployed by Naif (two Chainweaver wallets as governance), April 2026.
+- v10: `free.p2p-escrow-v10`, chain 1. Deployed by Saudi.KDA (two Chainweaver wallets as governance), April 2026.
 - v11: not yet (planned: chains 1 and 2).
 
 ## Notes for review

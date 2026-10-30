@@ -17,13 +17,13 @@ Nothing here changes the live site, its database, its PM2 processes or its nginx
 
 ## One-time setup, in order
 
-**1. DNS (Naif, GoDaddy → kadena.ws → DNS).** Add one record and change nothing else:
+**1. DNS (Saudi.KDA, GoDaddy → kadena.ws → DNS).** Add one record and change nothing else:
 
 | Type | Name | Value | TTL |
 |---|---|---|---|
 | A | marketplace-advanced | 89.167.14.58 | 1 hour |
 
-**2. GitHub access.** The repository is **public** (Naif, Oct 20), so the server needs no key or token and setup skips
+**2. GitHub access.** The repository is **public** (Saudi.KDA, Oct 20), so the server needs no key or token and setup skips
 this step. Only if it is made private again: the organization does not allow deploy keys, so create a fine-grained
 token that can only read it, and the setup script asks for it:
 
@@ -54,7 +54,7 @@ token that can only read it, and the setup script asks for it:
 
 If step 1 isn't visible yet, it stops and says so.
 
-**4. GitHub secrets (Naif).** In KadenaNexus → Settings → Secrets and variables → Actions:
+**4. GitHub secrets (Saudi.KDA).** In KadenaNexus → Settings → Secrets and variables → Actions:
 
 - For **DEPLOY_HOST**, **DEPLOY_USER** and **DEPLOY_KEY**, open each secret's *Repository access*. Add
   `marketplace-advanced` to the selected repositories. Keep it on "Selected repositories".
